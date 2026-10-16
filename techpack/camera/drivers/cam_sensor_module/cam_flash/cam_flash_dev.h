@@ -42,6 +42,10 @@
 
 #define CAM_FLASH_PIPELINE_DELAY 1
 
+/* Torch current register and range of the I2C flash driver IC (LM36011/KTD2691) */
+#define CAM_FLASH_TORCH_CURRENT_REG   0x04
+#define CAM_FLASH_TORCH_STRENGTH_MAX  127
+
 #define FLASH_DRIVER_I2C "i2c_flash"
 
 #define CAM_FLASH_PACKET_OPCODE_INIT                 0
@@ -223,6 +227,7 @@ struct cam_flash_ctrl {
 	uint32_t                            last_flush_req;
 	uint32_t                            streamoff_count;
 	int32_t                             apply_streamoff;
+	int32_t                             torch_strength_override;
 };
 
 int cam_flash_pmic_pkt_parser(struct cam_flash_ctrl *fctrl, void *arg);
@@ -239,6 +244,8 @@ int cam_flash_i2c_flush_request(struct cam_flash_ctrl *fctrl,
 int cam_flash_pmic_flush_request(struct cam_flash_ctrl *fctrl,
 	enum cam_flash_flush_type, uint64_t req_id);
 void cam_flash_shutdown(struct cam_flash_ctrl *fctrl);
+void cam_flash_apply_torch_strength(struct cam_flash_ctrl *fctrl,
+	struct i2c_settings_list *i2c_list);
 int cam_flash_release_dev(struct cam_flash_ctrl *fctrl);
 
 /**
