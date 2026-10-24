@@ -191,6 +191,10 @@ out_abort_creds:
 
 int escape_with_root_profile(void)
 {
+	if (test_thread_flag(TIF_KSU_DISABLE_ESCAPE_WITH_ROOT)) {
+		pr_warn("TIF_KSU_DISABLE_ESCAPE_WITH_ROOT set, don't escape!\n");
+		return -EPERM;
+	}
 	return escape_to_root(false);
 }
 

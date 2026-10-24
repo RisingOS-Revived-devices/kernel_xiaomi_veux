@@ -12,14 +12,21 @@ struct ksu_become_daemon_cmd {
 #define EVENT_POST_FS_DATA 1
 #define EVENT_BOOT_COMPLETED 2
 #define EVENT_MODULE_MOUNTED 3
+#define EVENT_SERVICES 4
 
 #define KSU_GET_INFO_FLAG_LKM (1U << 0)
 #define KSU_GET_INFO_FLAG_MANAGER (1U << 1)
 #define KSU_GET_INFO_FLAG_LATE_LOAD (1U << 2)
 #define KSU_GET_INFO_FLAG_PR_BUILD (1U << 3)
+#define KSU_GET_INFO_FLAG_BUNDLED (1U << 4)
 
-/* 2: allowlist v4 root profile flags */
-#define KERNEL_SU_UAPI_VERSION 2
+/*
+ * 2: allowlist v4 root profile flags
+ * 3: scoped su-session driver fd
+ * 4: add KSU_GET_INFO_FLAG_BUNDLED
+ * 5: add EVENT_SERVICES with a start/skip result
+ */
+#define KERNEL_SU_UAPI_VERSION 5
 
 struct ksu_get_info_cmd {
 	__u32 version; /* Output: KERNEL_SU_VERSION */
@@ -170,5 +177,7 @@ struct ksu_get_sulog_fd_cmd {
 #define KSU_IOCTL_ADD_TRY_UMOUNT _IOC(_IOC_WRITE, 'K', 18, 0)
 #define KSU_IOCTL_SET_INIT_PGRP _IO('K', 19)
 #define KSU_IOCTL_GET_SULOG_FD _IOW('K', 20, struct ksu_get_sulog_fd_cmd)
+/* UAPI 3: a su-session drops its ability to re-escalate to root */
+#define KSU_IOCTL_DISABLE_ESCAPE_TO_ROOT _IO('K', 21)
 
 #endif

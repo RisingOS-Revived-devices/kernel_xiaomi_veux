@@ -1,12 +1,20 @@
+// Per-fd context, so a su-session fd (UAPI 3) can carry extra permissions
+#define KSU_DRIVER_PERMISSION_SU_SESSION (1UL << 0)
+
+struct ksu_driver_context {
+	unsigned long permissions;
+};
+
 static int anon_ksu_release(struct inode *inode, struct file *filp)
 {
+	kfree(filp->private_data);
 	pr_info("ksu fd released\n");
 	return 0;
 }
 
 static long anon_ksu_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 {
-	return ksu_supercall_handle_ioctl(cmd, (void __user *)arg);
+	return ksu_supercall_handle_ioctl(filp, cmd, (void __user *)arg);
 }
 
 // File operations structure
@@ -17,24 +25,36 @@ static const struct file_operations anon_ksu_fops = {
 	.release = anon_ksu_release,
 };
 
-// Install KSU fd to current process
-int ksu_install_fd(void)
+// Install a KSU fd carrying the given permissions to the current process
+static int ksu_install_fd_with_permissions(unsigned long permissions)
 {
+	struct ksu_driver_context *context;
 	struct file *filp;
+	const char *name;
 	int fd;
+
+	context = kzalloc(sizeof(*context), GFP_KERNEL);
+	if (!context)
+		return -ENOMEM;
+
+	context->permissions = permissions;
+	name = (permissions & KSU_DRIVER_PERMISSION_SU_SESSION) ?
+		       "[ksu_driver_su]" : "[ksu_driver]";
 
 	// Get unused fd
 	fd = get_unused_fd_flags(O_CLOEXEC);
 	if (fd < 0) {
 		pr_err("ksu_install_fd: failed to get unused fd\n");
+		kfree(context);
 		return fd;
 	}
 
 	// Create anonymous inode file
-	filp = anon_inode_getfile("[ksu_driver]", &anon_ksu_fops, NULL, O_RDWR | O_CLOEXEC);
+	filp = anon_inode_getfile(name, &anon_ksu_fops, context, O_RDWR | O_CLOEXEC);
 	if (IS_ERR(filp)) {
 		pr_err("ksu_install_fd: failed to create anon inode file\n");
 		put_unused_fd(fd);
+		kfree(context);
 		return PTR_ERR(filp);
 	}
 
@@ -44,6 +64,26 @@ int ksu_install_fd(void)
 	pr_info("ksu fd installed: %d for pid %d\n", fd, current->pid);
 
 	return fd;
+}
+
+// Install KSU fd to current process
+int ksu_install_fd(void)
+{
+	return ksu_install_fd_with_permissions(0);
+}
+
+// Install a scoped su-session fd (UAPI 3), after exec into ksud
+int ksu_install_su_fd(void)
+{
+	return ksu_install_fd_with_permissions(KSU_DRIVER_PERMISSION_SU_SESSION);
+}
+
+// True if the ioctl came through a su-session fd
+bool ksu_is_su_session_fd(const struct file *filp)
+{
+	const struct ksu_driver_context *context = filp->private_data;
+
+	return context && (context->permissions & KSU_DRIVER_PERMISSION_SU_SESSION);
 }
 
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(3, 5, 0)

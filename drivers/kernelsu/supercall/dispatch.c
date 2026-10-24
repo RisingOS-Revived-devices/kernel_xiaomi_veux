@@ -101,6 +101,17 @@ static int do_report_event(void __user *arg)
 		on_module_mounted();
 		break;
 	}
+	case EVENT_SERVICES: {
+		// UAPI 5: tell ksud to run the service stage once per boot
+		static bool services_started = false;
+		if (services_started) {
+			pr_info("services already started, skipping\n");
+			return 0;
+		}
+		services_started = true;
+		pr_info("services triggered\n");
+		return 1;
+	}
 	default:
 		break;
 	}
@@ -684,6 +695,13 @@ static int do_get_sulog_fd(void __user *arg)
 	return ksu_install_sulog_fd();
 }
 
+// UAPI 3: a su-session asks us never to re-escalate it to root
+static int do_disable_escape_to_root(void __user *arg)
+{
+	set_thread_flag(TIF_KSU_DISABLE_ESCAPE_WITH_ROOT);
+	return 0;
+}
+
 // IOCTL handlers mapping table
 static const struct ksu_ioctl_cmd_map ksu_ioctl_handlers[] = {
 	{ .cmd = KSU_IOCTL_GRANT_ROOT, .name = "GRANT_ROOT", .handler = do_grant_root, .perm_check = allowed_for_su },
@@ -703,16 +721,17 @@ static const struct ksu_ioctl_cmd_map ksu_ioctl_handlers[] = {
 	{ .cmd = KSU_IOCTL_SET_APP_PROFILE, .name = "SET_APP_PROFILE", .handler = do_set_app_profile, .perm_check = only_manager },
 	{ .cmd = KSU_IOCTL_GET_FEATURE, .name = "GET_FEATURE", .handler = do_get_feature, .perm_check = manager_or_root },
 	{ .cmd = KSU_IOCTL_SET_FEATURE, .name = "SET_FEATURE", .handler = do_set_feature, .perm_check = manager_or_root },
-	{ .cmd = KSU_IOCTL_GET_WRAPPER_FD, .name = "GET_WRAPPER_FD", .handler = do_get_wrapper_fd, .perm_check = manager_or_root },
+	{ .cmd = KSU_IOCTL_GET_WRAPPER_FD, .name = "GET_WRAPPER_FD", .handler = do_get_wrapper_fd, .perm_check = manager_or_root, .allow_su_session = true },
 	{ .cmd = KSU_IOCTL_MANAGE_MARK, .name = "MANAGE_MARK", .handler = do_manage_mark, .perm_check = manager_or_root },
 	{ .cmd = KSU_IOCTL_NUKE_EXT4_SYSFS, .name = "NUKE_EXT4_SYSFS", .handler = do_nuke_ext4_sysfs, .perm_check = manager_or_root },
 	{ .cmd = KSU_IOCTL_ADD_TRY_UMOUNT, .name = "ADD_TRY_UMOUNT", .handler = add_try_umount, .perm_check = manager_or_root },
 	{ .cmd = KSU_IOCTL_SET_INIT_PGRP, .name = "SET_INIT_PGRP", .handler = do_set_init_pgrp, .perm_check = only_root },
 	{ .cmd = KSU_IOCTL_GET_SULOG_FD, .name = "GET_SULOG_FD", .handler = do_get_sulog_fd, .perm_check = only_root },
+	{ .cmd = KSU_IOCTL_DISABLE_ESCAPE_TO_ROOT, .name = "DISABLE_ESCAPE_TO_ROOT", .handler = do_disable_escape_to_root, .perm_check = only_root, .allow_su_session = true },
 	{ .cmd = 0, .name = NULL, .handler = NULL, .perm_check = NULL } // Sentinel
 };
 
-long ksu_supercall_handle_ioctl(unsigned int cmd, void __user *argp)
+long ksu_supercall_handle_ioctl(const struct file *filp, unsigned int cmd, void __user *argp)
 {
 	int i;
 	kuid_t current_uid = current_uid();
@@ -723,9 +742,11 @@ long ksu_supercall_handle_ioctl(unsigned int cmd, void __user *argp)
 
 	for (i = 0; ksu_ioctl_handlers[i].handler; i++) {
 		if (cmd == ksu_ioctl_handlers[i].cmd) {
-			// Check permission first
+			// Check permission first; a su-session fd may be allowed too (UAPI 3)
 			if (ksu_ioctl_handlers[i].perm_check &&
-			    !ksu_ioctl_handlers[i].perm_check()) {
+			    !ksu_ioctl_handlers[i].perm_check() &&
+			    !(ksu_ioctl_handlers[i].allow_su_session &&
+			      ksu_is_su_session_fd(filp))) {
 				pr_warn("ksu ioctl: permission denied for cmd=0x%x uid=%d\n",
 					cmd, ksu_get_uid_t(current_uid));
 				return -EPERM;
