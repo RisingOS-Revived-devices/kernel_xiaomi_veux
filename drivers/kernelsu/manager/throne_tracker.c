@@ -27,9 +27,14 @@ static void crown_manager(const char *apk, struct list_head *uid_data)
 			ksu_set_manager_appid(np->uid);
 			{
 				u32 ver = ksu_get_matched_manager_version();
+				u32 uapi = ksu_get_matched_manager_uapi();
 
 				if (ver)
 					ksu_set_version_override(ver);
+				// Report the UAPI this manager expects, so it does
+				// not ask the user to update the kernel.
+				if (uapi)
+					ksu_set_uapi_override(uapi);
 			}
 			break;
 		}

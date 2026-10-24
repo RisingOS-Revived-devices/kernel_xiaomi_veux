@@ -67,14 +67,18 @@ int ksu_get_feature(u32 feature_id, u64 *value, bool *supported)
 	int ret = 0;
 	const struct ksu_feature_handler *handler;
 
-	if (feature_id >= KSU_FEATURE_MAX) {
-		pr_err("feature: invalid feature_id %u\n", feature_id);
-		return -EINVAL;
-	}
-
 	if (!value || !supported) {
 		pr_err("feature: invalid parameters\n");
 		return -EINVAL;
+	}
+
+	// An unknown or out-of-range feature id is cleanly "unsupported", not an
+	// error, so managers that probe newer feature ids get a defined answer.
+	if (feature_id >= KSU_FEATURE_MAX) {
+		*supported = false;
+		*value = 0;
+		pr_debug("feature: feature %u out of range, unsupported\n", feature_id);
+		return 0;
 	}
 
 	mutex_lock(&feature_mutex);

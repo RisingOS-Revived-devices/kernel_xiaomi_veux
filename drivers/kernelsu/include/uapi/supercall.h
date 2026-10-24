@@ -150,6 +150,24 @@ struct ksu_get_sulog_fd_cmd {
 #define KSU_UMOUNT_ADD 1	// add entry (path + flags)
 #define KSU_UMOUNT_DEL 2	// delete entry, strcmp
 
+/* Info queries used by various managers to show hook mode and version */
+struct ksu_get_hook_mode_cmd {
+	char mode[16]; /* Output: hook mode string (KernelSU-Next, WKSU) */
+};
+struct ksu_get_version_tag_cmd {
+	char tag[32]; /* Output: version tag string */
+};
+struct ksu_get_full_version_cmd {
+	char version_full[255]; /* Output: full version string (SukiSU, ReSukiSU) */
+};
+struct ksu_hook_type_cmd {
+	char hook_type[32]; /* Output: hook type string (SukiSU, ReSukiSU) */
+};
+struct ksu_set_spoof_version_cmd {
+	__u8 release[65]; /* Input: uname release to spoof */
+	__u8 version[65]; /* Input: uname version to spoof */
+};
+
 // IOCTL command definitions
 #define KSU_IOCTL_GRANT_ROOT _IOC(_IOC_NONE, 'K', 1, 0)
 #define KSU_IOCTL_GET_INFO _IOR('K', 2, struct ksu_get_info_cmd)
@@ -179,5 +197,13 @@ struct ksu_get_sulog_fd_cmd {
 #define KSU_IOCTL_GET_SULOG_FD _IOW('K', 20, struct ksu_get_sulog_fd_cmd)
 /* UAPI 3: a su-session drops its ability to re-escalate to root */
 #define KSU_IOCTL_DISABLE_ESCAPE_TO_ROOT _IO('K', 21)
+
+/* Info queries (fork-specific): report hook mode / version so managers
+ * show the real values instead of "Unknown". */
+#define KSU_IOCTL_GET_HOOK_MODE _IOC(_IOC_READ, 'K', 98, 0)
+#define KSU_IOCTL_GET_VERSION_TAG _IOC(_IOC_READ, 'K', 99, 0)
+#define KSU_IOCTL_GET_FULL_VERSION _IOC(_IOC_READ, 'K', 100, 0)
+#define KSU_IOCTL_HOOK_TYPE _IOC(_IOC_READ, 'K', 101, 0)
+#define KSU_IOCTL_SET_SPOOF_VERSION _IOC(_IOC_WRITE, 'K', 102, 0)
 
 #endif

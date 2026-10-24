@@ -17,6 +17,7 @@ static int do_grant_root(void __user *arg)
 
 static uint32_t ksuver_override = 0;
 static uint32_t ksuflags_override = 0;
+static uint32_t ksuuapi_override = 0;
 
 void ksu_set_version_override(__u32 version)
 {
@@ -27,6 +28,17 @@ void ksu_set_version_override(__u32 version)
 void ksu_clear_version_override(void)
 {
 	ksuver_override = 0;
+}
+
+void ksu_set_uapi_override(__u32 uapi)
+{
+	ksuuapi_override = uapi;
+	pr_info("ksu uapi override set to %u\n", uapi);
+}
+
+void ksu_clear_uapi_override(void)
+{
+	ksuuapi_override = 0;
 }
 
 static void fill_get_info_common(__u32 *version, __u32 *flags, __u32 *features)
@@ -44,7 +56,7 @@ static int do_get_info(void __user *arg)
 	struct ksu_get_info_cmd cmd = {0};
 
 	fill_get_info_common(&cmd.version, &cmd.flags, &cmd.features);
-	cmd.uapi_version = KERNEL_SU_UAPI_VERSION;
+	cmd.uapi_version = ksuuapi_override ? ksuuapi_override : KERNEL_SU_UAPI_VERSION;
 
 	if (copy_to_user(arg, &cmd, sizeof(cmd))) {
 		pr_err("get_version: copy_to_user failed\n");
@@ -343,7 +355,7 @@ static int do_set_app_profile(void __user *arg)
 static int do_get_feature(void __user *arg)
 {
 	struct ksu_get_feature_cmd cmd;
-	bool supported;
+	bool supported = false;
 	int ret;
 
 	if (copy_from_user(&cmd, arg, sizeof(cmd))) {
@@ -702,6 +714,49 @@ static int do_disable_escape_to_root(void __user *arg)
 	return 0;
 }
 
+/*
+ * Info queries. Our driver uses manual (inline) syscall hooks plus LSM, so the
+ * hook mode is "Manual" for every manager that asks. Without these the managers
+ * show "Unknown".
+ */
+static int do_get_hook_mode(void __user *arg)
+{
+	struct ksu_get_hook_mode_cmd cmd = {0};
+
+	strscpy(cmd.mode, "Manual", sizeof(cmd.mode));
+	return copy_to_user(arg, &cmd, sizeof(cmd)) ? -EFAULT : 0;
+}
+
+static int do_get_version_tag(void __user *arg)
+{
+	struct ksu_get_version_tag_cmd cmd = {0};
+
+	strscpy(cmd.tag, "veux", sizeof(cmd.tag));
+	return copy_to_user(arg, &cmd, sizeof(cmd)) ? -EFAULT : 0;
+}
+
+static int do_get_full_version(void __user *arg)
+{
+	struct ksu_get_full_version_cmd cmd = {0};
+
+	strscpy(cmd.version_full, "v3.3.1-veux", sizeof(cmd.version_full));
+	return copy_to_user(arg, &cmd, sizeof(cmd)) ? -EFAULT : 0;
+}
+
+static int do_hook_type(void __user *arg)
+{
+	struct ksu_hook_type_cmd cmd = {0};
+
+	strscpy(cmd.hook_type, "Manual", sizeof(cmd.hook_type));
+	return copy_to_user(arg, &cmd, sizeof(cmd)) ? -EFAULT : 0;
+}
+
+// Accept but ignore: uname spoofing is handled separately (SUSFS SPOOF_UNAME).
+static int do_set_spoof_version(void __user *arg)
+{
+	return 0;
+}
+
 // IOCTL handlers mapping table
 static const struct ksu_ioctl_cmd_map ksu_ioctl_handlers[] = {
 	{ .cmd = KSU_IOCTL_GRANT_ROOT, .name = "GRANT_ROOT", .handler = do_grant_root, .perm_check = allowed_for_su },
@@ -728,6 +783,11 @@ static const struct ksu_ioctl_cmd_map ksu_ioctl_handlers[] = {
 	{ .cmd = KSU_IOCTL_SET_INIT_PGRP, .name = "SET_INIT_PGRP", .handler = do_set_init_pgrp, .perm_check = only_root },
 	{ .cmd = KSU_IOCTL_GET_SULOG_FD, .name = "GET_SULOG_FD", .handler = do_get_sulog_fd, .perm_check = only_root },
 	{ .cmd = KSU_IOCTL_DISABLE_ESCAPE_TO_ROOT, .name = "DISABLE_ESCAPE_TO_ROOT", .handler = do_disable_escape_to_root, .perm_check = only_root, .allow_su_session = true },
+	{ .cmd = KSU_IOCTL_GET_HOOK_MODE, .name = "GET_HOOK_MODE", .handler = do_get_hook_mode, .perm_check = manager_or_root },
+	{ .cmd = KSU_IOCTL_GET_VERSION_TAG, .name = "GET_VERSION_TAG", .handler = do_get_version_tag, .perm_check = manager_or_root },
+	{ .cmd = KSU_IOCTL_GET_FULL_VERSION, .name = "GET_FULL_VERSION", .handler = do_get_full_version, .perm_check = manager_or_root },
+	{ .cmd = KSU_IOCTL_HOOK_TYPE, .name = "HOOK_TYPE", .handler = do_hook_type, .perm_check = manager_or_root },
+	{ .cmd = KSU_IOCTL_SET_SPOOF_VERSION, .name = "SET_SPOOF_VERSION", .handler = do_set_spoof_version, .perm_check = manager_or_root },
 	{ .cmd = 0, .name = NULL, .handler = NULL, .perm_check = NULL } // Sentinel
 };
 

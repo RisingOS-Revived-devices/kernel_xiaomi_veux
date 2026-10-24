@@ -354,18 +354,27 @@ struct ksu_manager_sign {
 	unsigned expected_size;
 	const char *expected_hash;
 	u32 version_code;
+	u32 uapi; // UAPI version this manager expects the kernel to report
 };
 
 static u32 matched_manager_version;
+static u32 matched_manager_uapi;
 
+// version_code and uapi track each manager's latest release (checked 2026-10-24);
+// signatures are unchanged. uapi is what that manager compares against ours.
 static const struct ksu_manager_sign ksu_known_managers[] = {
-	{ 0x363, "4359c171f32543394cbc23ef908c4bb94cad7c8087002ba164c8230948c21549", 32522 }, // backslashxx dummy.keystore
-	{ 0x375, "484fcba6e6c43b1fb09700633bf2fb4758f13cb0b2f4457b80d075084b26c588", 32689 }, // KOWX712/KernelSU
-	{ 0x3e6, "79e590113c4c4c0c222978e413a5faa801666957b1212a328e46c00c69821bf7", 33294 }, // rifsxd/KernelSU-Next
-	{ 0x381, "52d52d8c8bfbe53dc2b6ff1c613184e2c03013e090fe8905d8e3d5dc2658c2e4", 33208 }, // WKSU (Wild KSU)
-	{ 0x377, "d3469712b6214462764a1d8d3e5cbe1d6819a0b629791b9f4101867821f1df64", 33110 }, // ReSukiSU
-	{ 0x35c, "947ae944f3de4ed4c21a7e4f7953ecf351bfa2b36239da37a34111ad29993eef", 40900 }, // SukiSU-Ultra v4.1.4
+	{ 0x363, "4359c171f32543394cbc23ef908c4bb94cad7c8087002ba164c8230948c21549", 32704, 6 }, // backslashxx v3.3.1-24
+	{ 0x375, "484fcba6e6c43b1fb09700633bf2fb4758f13cb0b2f4457b80d075084b26c588", 32732, 6 }, // KOWX712/KernelSU master
+	{ 0x3e6, "79e590113c4c4c0c222978e413a5faa801666957b1212a328e46c00c69821bf7", 33355, 5 }, // rifsxd/KernelSU-Next v3.4.2
+	{ 0x381, "52d52d8c8bfbe53dc2b6ff1c613184e2c03013e090fe8905d8e3d5dc2658c2e4", 33208, 6 }, // WKSU v3.1.2 (no uapi check)
+	{ 0x377, "d3469712b6214462764a1d8d3e5cbe1d6819a0b629791b9f4101867821f1df64", 35171, 4 }, // ReSukiSU v4.2.0-rc3
+	{ 0x35c, "947ae944f3de4ed4c21a7e4f7953ecf351bfa2b36239da37a34111ad29993eef", 41068, 6 }, // SukiSU-Ultra v4.2.1-r2
 };
+
+uint32_t ksu_get_matched_manager_uapi(void)
+{
+	return matched_manager_uapi;
+}
 
 uint32_t ksu_get_matched_manager_version(void)
 {
@@ -404,11 +413,13 @@ bool is_manager_apk(char *path)
 #endif
 
 	matched_manager_version = 0;
+	matched_manager_uapi = 0;
 	{
 		int i;
 
 		if (check_v2_signature(path, EXPECTED_SIZE, EXPECTED_HASH)) {
 			matched_manager_version = KSU_OFFICIAL_MANAGER_VER;
+			matched_manager_uapi = KSU_OFFICIAL_MANAGER_UAPI;
 			return true;
 		}
 
@@ -418,6 +429,7 @@ bool is_manager_apk(char *path)
 			if (check_v2_signature(path, sign->expected_size,
 					       sign->expected_hash)) {
 				matched_manager_version = sign->version_code;
+				matched_manager_uapi = sign->uapi;
 				return true;
 			}
 		}
