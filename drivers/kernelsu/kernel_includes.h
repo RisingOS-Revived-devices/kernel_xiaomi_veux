@@ -63,6 +63,9 @@
 #include <linux/syscalls.h>
 #include <linux/thread_info.h>
 #include <linux/types.h>
+#include <linux/kallsyms.h>
+#include <linux/sort.h>
+#include <linux/bsearch.h>
 #include <linux/uaccess.h>
 #include <linux/uidgid.h>
 #include <linux/uio.h>

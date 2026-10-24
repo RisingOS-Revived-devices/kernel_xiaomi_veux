@@ -19,14 +19,25 @@ struct ksu_become_daemon_cmd {
 #define KSU_GET_INFO_FLAG_LATE_LOAD (1U << 2)
 #define KSU_GET_INFO_FLAG_PR_BUILD (1U << 3)
 #define KSU_GET_INFO_FLAG_BUNDLED (1U << 4)
+/* The preinit runner will run module preinit actions on boot */
+#define KSU_GET_INFO_FLAG_PREINIT (1U << 5)
 
 /*
  * 2: allowlist v4 root profile flags
  * 3: scoped su-session driver fd
  * 4: add KSU_GET_INFO_FLAG_BUNDLED
  * 5: add EVENT_SERVICES with a start/skip result
+ * 6: add KSU_IOCTL_LOOKUP_SYMBOLS and KSU_GET_INFO_FLAG_PREINIT
  */
-#define KERNEL_SU_UAPI_VERSION 5
+#define KERNEL_SU_UAPI_VERSION 6
+
+struct ksu_lookup_symbols_cmd {
+	__aligned_u64 names; /* Input: user ptr to `count` user ptrs to names */
+	__aligned_u64 addrs; /* Output: user ptr to `count` __u64 addresses */
+	__u32 count; /* Input: number of symbols, at most KSU_LOOKUP_SYMBOLS_MAX */
+	__u32 flags; /* Input: reserved, must be 0 */
+};
+#define KSU_LOOKUP_SYMBOLS_MAX 1024
 
 struct ksu_get_info_cmd {
 	__u32 version; /* Output: KERNEL_SU_VERSION */
@@ -205,5 +216,8 @@ struct ksu_set_spoof_version_cmd {
 #define KSU_IOCTL_GET_FULL_VERSION _IOC(_IOC_READ, 'K', 100, 0)
 #define KSU_IOCTL_HOOK_TYPE _IOC(_IOC_READ, 'K', 101, 0)
 #define KSU_IOCTL_SET_SPOOF_VERSION _IOC(_IOC_WRITE, 'K', 102, 0)
+
+/* UAPI 6: resolve kernel symbols for userspace (ksud/preinit module loading) */
+#define KSU_IOCTL_LOOKUP_SYMBOLS _IOW('K', 22, struct ksu_lookup_symbols_cmd)
 
 #endif

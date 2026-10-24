@@ -757,6 +757,173 @@ static int do_set_spoof_version(void __user *arg)
 	return 0;
 }
 
+/*
+ * UAPI 6: resolve core-kernel symbol addresses for userspace, so a module's
+ * undefined symbols can be bound before init_module without the kernel parsing
+ * the module ELF. Built-in 5.4 path: a single kallsyms_on_each_symbol walk,
+ * with the requested names sorted so the callback can bsearch them.
+ */
+struct ksu_sym_entry {
+	const char *name;
+	unsigned long addr;
+	u32 idx;
+};
+
+static int ksu_sym_entry_cmp(const void *a, const void *b)
+{
+	return strcmp(((const struct ksu_sym_entry *)a)->name,
+		      ((const struct ksu_sym_entry *)b)->name);
+}
+
+static int ksu_sym_key_cmp(const void *key, const void *elt)
+{
+	return strcmp((const char *)key,
+		      ((const struct ksu_sym_entry *)elt)->name);
+}
+
+struct ksu_sym_ctx {
+	struct ksu_sym_entry *entries;
+	u32 count;
+	u32 remaining;
+};
+
+static int ksu_sym_cb(void *data, const char *name, struct module *mod,
+		      unsigned long addr)
+{
+	struct ksu_sym_ctx *ctx = data;
+	struct ksu_sym_entry *e;
+	char buf[KSYM_NAME_LEN];
+	char *p;
+
+	if (mod) // only core-kernel symbols, never module ones
+		return 0;
+
+	// A name may carry a "$..." or ".llvm..." suffix; match on the base name.
+	strscpy(buf, name, sizeof(buf));
+	p = strchr(buf, '$');
+	if (p)
+		*p = '\0';
+	p = strstr(buf, ".llvm.");
+	if (p)
+		*p = '\0';
+
+	e = bsearch(buf, ctx->entries, ctx->count, sizeof(*ctx->entries),
+		    ksu_sym_key_cmp);
+	if (e && !e->addr) {
+		e->addr = addr;
+		if (--ctx->remaining == 0)
+			return 1; // all found, stop walking
+	}
+	return 0;
+}
+
+static int ksu_lookup_kernel_symbols(const char *const *names,
+				     unsigned long *addrs, u32 count)
+{
+	struct ksu_sym_ctx ctx;
+	u32 i, n = 0;
+	int found = 0;
+
+	ctx.entries = kvcalloc(count, sizeof(*ctx.entries), GFP_KERNEL);
+	if (!ctx.entries)
+		return -ENOMEM;
+
+	for (i = 0; i < count; i++) {
+		addrs[i] = 0;
+		if (!names[i] || !names[i][0])
+			continue;
+		ctx.entries[n].name = names[i];
+		ctx.entries[n].addr = 0;
+		ctx.entries[n].idx = i;
+		n++;
+	}
+	ctx.count = n;
+	ctx.remaining = n;
+	if (n) {
+		sort(ctx.entries, n, sizeof(*ctx.entries), ksu_sym_entry_cmp, NULL);
+		kallsyms_on_each_symbol(ksu_sym_cb, &ctx);
+		for (i = 0; i < n; i++) {
+			addrs[ctx.entries[i].idx] = ctx.entries[i].addr;
+			if (ctx.entries[i].addr)
+				found++;
+		}
+	}
+	kvfree(ctx.entries);
+	return found;
+}
+
+static int do_lookup_symbols(void __user *arg)
+{
+	struct ksu_lookup_symbols_cmd cmd;
+	const u64 __user *unames;
+	u64 __user *uaddrs;
+	char **names = NULL;
+	unsigned long *addrs = NULL;
+	int ret = 0;
+	u32 i;
+
+	if (copy_from_user(&cmd, arg, sizeof(cmd)))
+		return -EFAULT;
+	if (cmd.flags)
+		return -EINVAL;
+	if (!cmd.count || cmd.count > KSU_LOOKUP_SYMBOLS_MAX)
+		return -EINVAL;
+
+	names = kvcalloc(cmd.count, sizeof(*names), GFP_KERNEL);
+	addrs = kvcalloc(cmd.count, sizeof(*addrs), GFP_KERNEL);
+	if (!names || !addrs) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	unames = (const u64 __user *)(uintptr_t)cmd.names;
+	uaddrs = (u64 __user *)(uintptr_t)cmd.addrs;
+	for (i = 0; i < cmd.count; i++) {
+		u64 uname;
+		char *name;
+
+		if (get_user(uname, unames + i)) {
+			ret = -EFAULT;
+			goto out;
+		}
+		name = strndup_user((const char __user *)(uintptr_t)uname,
+				    KSYM_NAME_LEN);
+		if (IS_ERR(name)) {
+			// An overlong name cannot be a kernel symbol: report missing.
+			if (PTR_ERR(name) == -EINVAL)
+				continue;
+			ret = PTR_ERR(name);
+			goto out;
+		}
+		if (!*name) {
+			kfree(name);
+			continue;
+		}
+		names[i] = name;
+	}
+
+	ret = ksu_lookup_kernel_symbols((const char *const *)names, addrs,
+					cmd.count);
+	if (ret < 0)
+		goto out;
+
+	for (i = 0; i < cmd.count; i++) {
+		if (put_user((u64)addrs[i], uaddrs + i)) {
+			ret = -EFAULT;
+			goto out;
+		}
+	}
+	ret = 0;
+
+out:
+	if (names)
+		for (i = 0; i < cmd.count; i++)
+			kfree(names[i]);
+	kvfree(names);
+	kvfree(addrs);
+	return ret;
+}
+
 // IOCTL handlers mapping table
 static const struct ksu_ioctl_cmd_map ksu_ioctl_handlers[] = {
 	{ .cmd = KSU_IOCTL_GRANT_ROOT, .name = "GRANT_ROOT", .handler = do_grant_root, .perm_check = allowed_for_su },
@@ -788,6 +955,7 @@ static const struct ksu_ioctl_cmd_map ksu_ioctl_handlers[] = {
 	{ .cmd = KSU_IOCTL_GET_FULL_VERSION, .name = "GET_FULL_VERSION", .handler = do_get_full_version, .perm_check = manager_or_root },
 	{ .cmd = KSU_IOCTL_HOOK_TYPE, .name = "HOOK_TYPE", .handler = do_hook_type, .perm_check = manager_or_root },
 	{ .cmd = KSU_IOCTL_SET_SPOOF_VERSION, .name = "SET_SPOOF_VERSION", .handler = do_set_spoof_version, .perm_check = manager_or_root },
+	{ .cmd = KSU_IOCTL_LOOKUP_SYMBOLS, .name = "LOOKUP_SYMBOLS", .handler = do_lookup_symbols, .perm_check = only_root },
 	{ .cmd = 0, .name = NULL, .handler = NULL, .perm_check = NULL } // Sentinel
 };
 
