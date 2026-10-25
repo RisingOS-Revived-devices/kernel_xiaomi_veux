@@ -524,6 +524,14 @@ config HISI_HIKEY_USB
 	help
 	  If you say yes here you get support for usb functionality of HiSilicon Hikey Platform.
 
+config FASTCHG_TOGGLE
+	bool "Charging power profile and USB fast charge controls"
+	help
+	  Exposes /sys/kernel/fastchgtoggle/mode (0 normal, 1 18W, 2 33W,
+	  3 67W) used by the PD/PPS policy manager, and
+	  /sys/kernel/fast_charge/force_fast_charge to raise USB (SDP)
+	  charging from 500 mA to 900 mA.
+
 source "drivers/misc/c2port/Kconfig"
 source "drivers/misc/eeprom/Kconfig"
 source "drivers/misc/cb710/Kconfig"

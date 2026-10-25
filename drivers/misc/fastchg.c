@@ -1,0 +1,91 @@
+/*
+ * Author: Chad Froebel <chadfroebel@gmail.com>
+ *
+ * Port to cheeseburger: engstk <eng.stk@sapo.pt>
+ *
+ * This software is licensed under the terms of the GNU General Public
+ * License version 2, as published by the Free Software Foundation, and
+ * may be copied, distributed, and modified under those terms.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ */
+
+/*
+ * Possible values for "force_fast_charge" are :
+ *
+ *   0 - Disabled (default)
+ *   1 - Raise USB (SDP) charging from 500 mA to 900 mA
+*/
+
+#include <linux/kobject.h>
+#include <linux/sysfs.h>
+#include <linux/string.h>
+#include <linux/module.h>
+
+#include <misc/fastchg.h>
+
+int force_fast_charge = 0;
+
+static int __init get_fastcharge_opt(char *ffc)
+{
+	force_fast_charge = strcmp(ffc, "1") == 0;
+	return 1;
+}
+
+__setup("ffc=", get_fastcharge_opt);
+
+static ssize_t force_fast_charge_show(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
+{
+	return sprintf(buf, "%d\n", force_fast_charge);
+}
+
+static ssize_t force_fast_charge_store(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
+{
+	int ret, val;
+
+	ret = kstrtoint(buf, 10, &val);
+	if (ret < 0)
+		return ret;
+
+	if (val < 0 || val > 1)
+		return -EINVAL;
+
+	force_fast_charge = val;
+	return count;
+}
+
+static struct kobj_attribute force_fast_charge_attribute =
+__ATTR(force_fast_charge, 0664, force_fast_charge_show, force_fast_charge_store);
+
+static struct attribute *force_fast_charge_attrs[] = {
+	&force_fast_charge_attribute.attr,
+	NULL,
+};
+
+static struct attribute_group force_fast_charge_attr_group = {
+	.attrs = force_fast_charge_attrs,
+};
+
+static struct kobject *force_fast_charge_kobj;
+
+static int __init force_fast_charge_init(void)
+{
+	int ret;
+
+	force_fast_charge_kobj = kobject_create_and_add("fast_charge", kernel_kobj);
+	if (!force_fast_charge_kobj)
+		return -ENOMEM;
+
+	ret = sysfs_create_group(force_fast_charge_kobj, &force_fast_charge_attr_group);
+	if (ret)
+		kobject_put(force_fast_charge_kobj);
+
+	return ret;
+}
+late_initcall(force_fast_charge_init);
+
+MODULE_LICENSE("GPL");

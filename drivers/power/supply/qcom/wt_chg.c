@@ -18,6 +18,7 @@
 #include <dt-bindings/iio/qti_power_supply_iio.h>
 #include <linux/iio/consumer.h>
 #include "wt_chg_iio.h"
+#include <misc/fastchg.h>
 
 #define MSG_OWNER_BC			32778
 #define MSG_TYPE_REQ_RESP		1
@@ -1221,6 +1222,11 @@ static int sw_battery_jeita(struct batt_chg *chg)
 			else
 				input_cur = 500;
 			type_cur = 512;
+			/* USB 3.x ports supply 900 mA */
+			if (force_fast_charge) {
+				input_cur = 900;
+				type_cur = 900;
+			}
 		} else if (type == POWER_SUPPLY_TYPE_USB_CDP) {
 			if(chg->ui_soc == 100)
 				input_cur = 1200;

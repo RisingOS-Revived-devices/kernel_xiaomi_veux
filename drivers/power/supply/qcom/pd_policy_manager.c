@@ -13,6 +13,7 @@
 #include <linux/iio/iio.h>
 #include <dt-bindings/iio/qti_power_supply_iio.h>
 #include <linux/iio/consumer.h>
+#include <misc/fastchgtoggle.h>
 #include "pd_policy_manager.h"
 
 #define PCA_PPS_CMD_RETRY_COUNT	2
@@ -1331,6 +1332,7 @@ static int battery_sw_jeita(struct usbpd_pm *pdpm)
 	int bat_temp = 0;
 	int step_therm = 0;
 	int therm_curr = 0;
+	int profile_curr = 0;
 	int cycle_volt = 0;
 
 	usbpd_get_iio_channel(pdpm, BMS, BMS_TEMP_NOW, &bat_temp);
@@ -1382,6 +1384,13 @@ static int battery_sw_jeita(struct usbpd_pm *pdpm)
 		step_therm = bat_step(pdpm, therm_curr);
 
 		step_ibat = min(step_therm, step_ibat);
+
+		profile_curr = fast_chg_ibat_limit();
+		if (profile_curr > 0) {
+			if (pdpm->cp.set_ibat_cur >= profile_curr)
+				pdpm->cp.set_ibat_cur = profile_curr;
+			step_ibat = min(bat_step(pdpm, profile_curr), step_ibat);
+		}
 		if (therm_curr < 2000)
 			pdpm->pps_temp_flag = false;
 	} else {
@@ -1621,12 +1630,14 @@ static int usbpd_pm_sm(struct usbpd_pm *pdpm)
     if(pdpm->sw_psy) {
         ret = power_supply_get_property(pdpm->sw_psy, POWER_SUPPLY_PROP_CAPACITY, &val);
 #ifdef WT_COMPILE_FACTORY_VERSION
-        if(val.intval >= 79 || pps_change_to_stop() || (therm_curr < 2000))
+        if(val.intval >= 79 || pps_change_to_stop() || (therm_curr < 2000) ||
+				!fast_chg_cp_allowed())
             pdpm->pps_leave = true;
         else
             pdpm->pps_leave = false;
 #else
-        if(val.intval >= 98 || pps_change_to_stop() || (therm_curr < 2000))
+        if(val.intval >= 98 || pps_change_to_stop() || (therm_curr < 2000) ||
+				!fast_chg_cp_allowed())
             pdpm->pps_leave = true;
         else
             pdpm->pps_leave = false;
