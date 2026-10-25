@@ -810,3 +810,10 @@ CONFIG_IP6_NF_NAT=y
 CONFIG_IP6_NF_TARGET_MASQUERADE=y
 # ZRAM writeback (move swap to storage)
 CONFIG_ZRAM_WRITEBACK=y
+# --- Droidspaces (namespaces/containers) ---
+CONFIG_SYSVIPC=y
+CONFIG_POSIX_MQUEUE=y
+CONFIG_IPC_NS=y
+CONFIG_PID_NS=y
+CONFIG_DEVTMPFS=y
+# CONFIG_DEVTMPFS_MOUNT is not set
