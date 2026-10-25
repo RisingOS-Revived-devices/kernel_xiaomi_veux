@@ -79,6 +79,7 @@
 #include "hook/core_hook.c"	// lsm
 
 #ifdef CONFIG_KSU_SUSFS
+#include "hook/susfs_glue.c"	// SUSFS <-> KSU selinux-domain + umount glue
 #include "hook/susfs_prctl.c"	// SUSFS command channel (prctl)
 #endif
 
