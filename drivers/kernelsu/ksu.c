@@ -35,6 +35,7 @@
 #include "feature/sucompat.h"
 #include "feature/sulog.h"
 #include "runtime/ksud.h"
+#include "preinit/preinit.h"
 #include "sulog/event.h"
 #include "sulog/fd.h"
 
@@ -79,6 +80,10 @@
 
 #ifdef CONFIG_KSU_SUSFS
 #include "hook/susfs_prctl.c"	// SUSFS command channel (prctl)
+#endif
+
+#ifdef CONFIG_KSU_PREINIT
+#include "preinit/preinit.c"	// module preinit runner
 #endif
 
 #include "selinux/selinux.c"
@@ -177,6 +182,10 @@ int __init kernelsu_init(void)
 
 #ifdef CONFIG_KSU_SUSFS
 	susfs_init();
+#endif
+
+#ifdef CONFIG_KSU_PREINIT
+	ksu_preinit_init();
 #endif
 
 	ksu_allowlist_init();

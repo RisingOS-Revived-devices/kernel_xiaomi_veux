@@ -52,6 +52,21 @@ config KSU_THRONE_TRACKER_ALWAYS_THREADED
 	  boot time, but can cause crowning failure on some FDE/FBEv1 setups.
 	  If unsure, say n.
 
+config KSU_PREINIT
+	bool "Module preinit (run module actions before SELinux loads)"
+	depends on KSU && ARM64
+	default n
+	help
+	  Embed a static runner that runs module preinit actions on boot,
+	  before the SELinux policy is loaded, by swapping it in for PID 1's
+	  "/system/bin/init selinux_setup" exec. SukiSU and KOWX managers mark
+	  preinit modules as supported when this is on.
+
+	  This runs in PID 1's exec path: a fault can bootloop the device.
+	  It is off by default; enable only after a build with it off boots,
+	  and keep preinit=0 on the kernel command line as an escape hatch.
+	  If unsure, say n.
+
 config KSU_LSM_SECURITY_HOOKS
 	bool "Use LSM security hooks"
         depends on KSU

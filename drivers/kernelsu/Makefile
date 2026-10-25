@@ -116,4 +116,29 @@ CFLAGS_ksu.o += -fno-stack-protector -fno-stack-check
 CFLAGS_REMOVE_ksu.o += -fsanitize=shadow-call-stack
 endif # CONFIG_KSU_DEBUG
 
+# --- Module preinit runner (CONFIG_KSU_PREINIT) ---
+# A static nolibc runner, built from source with the kernel's own CC (no libc,
+# no prebuilt blob) and embedded via preinit/blob.S. Nothing here is built when
+# CONFIG_KSU_PREINIT is unset.
+ifeq ($(CONFIG_KSU_PREINIT),y)
+obj-$(CONFIG_KSU) += preinit/blob.o
+
+KSU_RUNNER_CFLAGS := -nostdlib -nostdinc -ffreestanding -static -Os \
+	-fno-stack-protector -fno-builtin -fomit-frame-pointer \
+	-fno-asynchronous-unwind-tables -fno-unwind-tables \
+	--target=aarch64-linux-gnu \
+	-isystem $(srctree)/$(src)/preinit/runner/nolibc \
+	-isystem $(objtree)/usr/include \
+	-I$(srctree)/$(src)/include
+
+quiet_cmd_ksu_runner = RUNNER  $@
+      cmd_ksu_runner = $(CC) $(KSU_RUNNER_CFLAGS) -o $@ $<
+
+$(obj)/preinit/runner.elf: $(srctree)/$(src)/preinit/runner/runner.c FORCE
+	$(call if_changed,ksu_runner)
+
+$(obj)/preinit/blob.o: $(obj)/preinit/runner.elf
+AFLAGS_preinit/blob.o += -DKSU_PREINIT_RUNNER_BIN=$(obj)/preinit/runner.elf
+endif
+
 # Keep a new line here!! Because someone may append config

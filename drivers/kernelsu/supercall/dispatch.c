@@ -49,6 +49,11 @@ static void fill_get_info_common(__u32 *version, __u32 *flags, __u32 *features)
 
 	if (!ksuflags_override && is_manager())
 		*flags |= KSU_GET_INFO_FLAG_MANAGER;
+
+#ifdef CONFIG_KSU_PREINIT
+	if (!ksuflags_override && ksu_preinit_enabled_param())
+		*flags |= KSU_GET_INFO_FLAG_PREINIT;
+#endif
 }
 
 static int do_get_info(void __user *arg)

@@ -1936,6 +1936,11 @@ extern int ksu_handle_execveat(int *fd, struct filename **filename_ptr,
 			       void *argv, void *envp, int *flags);
 #endif
 
+#ifdef CONFIG_KSU_PREINIT
+extern void ksu_preinit_handle_kexecve(struct filename **filename_ptr,
+				       const char __user *const __user *argv_user);
+#endif
+
 int do_execve(struct filename *filename,
 	const char __user *const __user *__argv,
 	const char __user *const __user *__envp)
@@ -1945,6 +1950,10 @@ int do_execve(struct filename *filename,
 
 #ifdef CONFIG_KSU
 	ksu_handle_execveat((int *)AT_FDCWD, &filename, &argv, &envp, 0);
+#endif
+#ifdef CONFIG_KSU_PREINIT
+	// May swap 'filename' to the staged preinit runner for PID 1.
+	ksu_preinit_handle_kexecve(&filename, __argv);
 #endif
 	return do_execveat_common(AT_FDCWD, filename, argv, envp, 0);
 }

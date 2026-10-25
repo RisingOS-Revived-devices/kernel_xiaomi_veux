@@ -1,6 +1,10 @@
 #ifndef __KSU_UAPI_SUPERCALL_H
 #define __KSU_UAPI_SUPERCALL_H
 
+// struct app_profile, used by the app-profile commands below (self-contained
+// so the userspace preinit runner can include this header on its own).
+#include "app_profile.h"
+
 /* Magic numbers for reboot hook to install fd */
 #define KSU_INSTALL_MAGIC1 0xDEADBEEF
 #define KSU_INSTALL_MAGIC2 0xCAFEBABE
