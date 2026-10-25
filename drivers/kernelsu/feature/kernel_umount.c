@@ -1,5 +1,9 @@
 static bool ksu_kernel_umount_enabled = true;
 
+#ifdef CONFIG_KSU_SUSFS_TRY_UMOUNT
+extern void susfs_try_umount(uid_t target_uid);
+#endif
+
 static int kernel_umount_feature_get(u64 *value)
 {
 	*value = ksu_kernel_umount_enabled ? 1 : 0;
@@ -46,6 +50,25 @@ static void try_umount(const char *mnt, int flags)
 
 	ksu_umount_mnt(mnt, &path, flags);
 }
+
+#ifdef CONFIG_KSU_SUSFS_TRY_UMOUNT
+// SUSFS calls this to umount its own extra paths. check_mnt=false skips the
+// "must be a mount root" guard; uid is informational.
+void ksu_try_umount(const char *mnt, bool check_mnt, int flags, uid_t uid)
+{
+	struct path path;
+
+	if (kern_path(mnt, 0, &path))
+		return;
+
+	if (check_mnt && path.dentry != path.mnt->mnt_root) {
+		path_put(&path);
+		return;
+	}
+
+	ksu_umount_mnt(mnt, &path, flags);
+}
+#endif
 
 static inline int ksu_handle_umount(struct cred *new, const struct cred *old)
 {
@@ -100,6 +123,11 @@ static inline int ksu_handle_umount(struct cred *new, const struct cred *old)
 		try_umount(entry->umountable, entry->flags);
 	}
 	up_read(&mount_list_lock);
+
+#ifdef CONFIG_KSU_SUSFS_TRY_UMOUNT
+	// SUSFS user-defined umount paths, before reverting creds.
+	susfs_try_umount(new_uid);
+#endif
 
 	revert_creds(saved);
 

@@ -13,6 +13,7 @@
 #define __AARCH64_faccessat	48
 #define __AARCH64_newfstatat	79
 #define __AARCH64_newfstat	80
+#define __AARCH64_prctl		167
 
 // NOTE: CONFIG_COMPAT implies __ARCH_WANT_COMPAT_STAT64 (fstatat64, fstat64)
 #define __ARMEABI_reboot	88
@@ -46,6 +47,22 @@ static long hook_aarch64_execve(const struct pt_regs *regs)
 	ksu_handle_execve_sucompat(NULL, filename, NULL, NULL, NULL);
 	return aarch64_execve(regs);
 }
+
+#ifdef CONFIG_KSU_SUSFS
+static syscall_fn_t aarch64_prctl = NULL;
+static long hook_aarch64_prctl(const struct pt_regs *regs)
+{
+	int option = (int)regs->regs[0];
+	unsigned long arg2 = (unsigned long)regs->regs[1];
+	unsigned long arg3 = (unsigned long)regs->regs[2];
+	unsigned long arg4 = (unsigned long)regs->regs[3];
+	unsigned long arg5 = (unsigned long)regs->regs[4];
+
+	if (ksu_handle_prctl(option, arg2, arg3, arg4, arg5))
+		return 0;
+	return aarch64_prctl(regs);
+}
+#endif
 
 static syscall_fn_t aarch64_faccessat = NULL;
 static long hook_aarch64_faccessat(const struct pt_regs *regs)
@@ -149,6 +166,18 @@ static long hook_aarch64_execve(const char __user * filename,
 	ksu_handle_execve_sucompat((int *)AT_FDCWD, &filename, NULL, NULL, NULL);
 	return aarch64_execve(filename, argv, envp);
 }
+
+#ifdef CONFIG_KSU_SUSFS
+static long (*aarch64_prctl)(int option, unsigned long arg2, unsigned long arg3,
+			     unsigned long arg4, unsigned long arg5) = NULL;
+static long hook_aarch64_prctl(int option, unsigned long arg2, unsigned long arg3,
+			       unsigned long arg4, unsigned long arg5)
+{
+	if (ksu_handle_prctl(option, arg2, arg3, arg4, arg5))
+		return 0;
+	return aarch64_prctl(option, arg2, arg3, arg4, arg5);
+}
+#endif
 
 static long (*aarch64_faccessat)(int dfd, const char __user * filename, int mode) = NULL;
 static long hook_aarch64_faccessat(int dfd, const char __user * filename, int mode)
@@ -397,6 +426,9 @@ static void vfs_read_hook_wait_thread()
 static void ksu_syscall_table_hook_init()
 {
 	read_and_replace_syscall((void *)&aarch64_reboot, __AARCH64_reboot, (void *)hook_aarch64_reboot, (void *)sys_call_table);
+#ifdef CONFIG_KSU_SUSFS
+	read_and_replace_syscall((void *)&aarch64_prctl, __AARCH64_prctl, (void *)hook_aarch64_prctl, (void *)sys_call_table);
+#endif
 	read_and_replace_syscall((void *)&aarch64_execve, __AARCH64_execve, (void *)hook_aarch64_execve, (void *)sys_call_table);
 	read_and_replace_syscall((void *)&aarch64_faccessat, __AARCH64_faccessat, (void *)hook_aarch64_faccessat, (void *)sys_call_table);
 	read_and_replace_syscall((void *)&aarch64_newfstatat, __AARCH64_newfstatat, (void *)hook_aarch64_newfstatat, (void *)sys_call_table);

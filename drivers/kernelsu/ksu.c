@@ -1,5 +1,9 @@
 #include "kernel_includes.h"
 
+#ifdef CONFIG_KSU_SUSFS
+#include <linux/susfs.h>
+#endif
+
 // uapi
 #include "include/uapi/app_profile.h"
 #include "include/uapi/feature.h"
@@ -72,6 +76,10 @@
 #include "sulog/fd.c"
 
 #include "hook/core_hook.c"	// lsm
+
+#ifdef CONFIG_KSU_SUSFS
+#include "hook/susfs_prctl.c"	// SUSFS command channel (prctl)
+#endif
 
 #include "selinux/selinux.c"
 #include "selinux/sepolicy.c"
@@ -166,6 +174,10 @@ int __init kernelsu_init(void)
 	ksu_sulog_init(); // so the feature is registered
 
 	ksu_core_init();
+
+#ifdef CONFIG_KSU_SUSFS
+	susfs_init();
+#endif
 
 	ksu_allowlist_init();
 
