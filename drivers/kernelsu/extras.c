@@ -146,16 +146,19 @@ static void destroy_kprobe(struct kprobe **kp_ptr)
 	*kp_ptr = NULL;
 }
 #else // CONFIG_KPROBES
-int ksu_handle_slow_avc_audit_new(u32 tsid, u16 *tclass)
+// Manual hook path (no kprobes): called from slow_avc_audit() in
+// security/selinux/avc.c. Mirrors the kprobe handler above: swap a su tsid
+// for priv_app so the denial is not attributed to su. (Zeroing tclass instead
+// would index secclass_map[-1] in the audit callback.)
+int ksu_handle_slow_avc_audit(u32 *tsid)
 {
 	if (atomic_read(&disable_spoof))
 		return 0;
 
-	if (tsid != su_sid)
-		return 0;
-
-	pr_info("avc_spoof/slow_avc_audit: prevent log for sid: %u\n", su_sid);
-	*tclass = 0;
+	if (*tsid == su_sid) {
+		pr_info("avc_spoof/slow_avc_audit: replacing su_sid: %u with priv_app_sid: %u\n", su_sid, priv_app_sid);
+		*tsid = priv_app_sid;
+	}
 
 	return 0;
 }
