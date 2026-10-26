@@ -140,6 +140,10 @@ static int ksu_handle_fd_request(void __user *arg4)
 }
 #endif
 
+#ifdef CONFIG_KSU_SUSFS
+void ksu_handle_susfs_v2_query(int magic2, unsigned int cmd, void __user *arg);
+#endif
+
 // downstream: make sure to pass arg as reference, this can allow us to extend things.
 int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user **arg)
 {
@@ -162,7 +166,11 @@ int ksu_handle_sys_reboot(int magic1, int magic2, unsigned int cmd, void __user 
 	kuid_t current_uid = current_uid();
 	if (ksu_get_uid_t(current_uid) != 0)
 		return 0;
-	
+
+#ifdef CONFIG_KSU_SUSFS
+	ksu_handle_susfs_v2_query(magic2, cmd, arg4);
+#endif
+
 	// extensions
 	u64 reply = (u64)*arg;
 

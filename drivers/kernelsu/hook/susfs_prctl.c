@@ -164,3 +164,116 @@ bool ksu_handle_prctl(int option, unsigned long arg2, unsigned long arg3,
 	// Unknown SUSFS command under our option: consume it quietly.
 	return true;
 }
+
+/*
+ * Current managers (KernelSU-Next, SukiSU, ReSukiSU) detect SUSFS through the
+ * v2 channel, reboot(0xDEADBEEF, 0xFAFAFAFA, cmd, struct *), and never try the
+ * v1.5.5 prctl one, so they report SUSFS as missing. Answer their three query
+ * commands with what this kernel has. Every other v2 command keeps the
+ * ERR_CMD_NOT_SUPPORTED that ksud preloads into the struct, since the v2
+ * structs differ from the v1.5.5 ones this kernel implements.
+ */
+#define SUSFS_V2_MAGIC 0xFAFAFAFA
+#define SUSFS_V2_VERSION_BUFSIZE 16
+#define SUSFS_V2_FEATURES_SIZE 8192
+
+struct susfs_v2_short_str {
+	char str[SUSFS_V2_VERSION_BUFSIZE];
+	int err;
+};
+
+static const char *const susfs_v2_features[] = {
+#ifdef CONFIG_KSU_SUSFS_SUS_PATH
+	"CONFIG_KSU_SUSFS_SUS_PATH",
+#endif
+#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT
+	"CONFIG_KSU_SUSFS_SUS_MOUNT",
+#endif
+#ifdef CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT
+	"CONFIG_KSU_SUSFS_AUTO_ADD_SUS_KSU_DEFAULT_MOUNT",
+#endif
+#ifdef CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT
+	"CONFIG_KSU_SUSFS_AUTO_ADD_SUS_BIND_MOUNT",
+#endif
+#ifdef CONFIG_KSU_SUSFS_SUS_KSTAT
+	"CONFIG_KSU_SUSFS_SUS_KSTAT",
+#endif
+#ifdef CONFIG_KSU_SUSFS_SUS_OVERLAYFS
+	"CONFIG_KSU_SUSFS_SUS_OVERLAYFS",
+#endif
+#ifdef CONFIG_KSU_SUSFS_TRY_UMOUNT
+	"CONFIG_KSU_SUSFS_TRY_UMOUNT",
+#endif
+#ifdef CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT
+	"CONFIG_KSU_SUSFS_AUTO_ADD_TRY_UMOUNT_FOR_BIND_MOUNT",
+#endif
+#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME
+	"CONFIG_KSU_SUSFS_SPOOF_UNAME",
+#endif
+#ifdef CONFIG_KSU_SUSFS_ENABLE_LOG
+	"CONFIG_KSU_SUSFS_ENABLE_LOG",
+#endif
+#ifdef CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS
+	"CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS",
+#endif
+#ifdef CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG
+	"CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG",
+#endif
+#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT
+	"CONFIG_KSU_SUSFS_OPEN_REDIRECT",
+#endif
+#ifdef CONFIG_KSU_SUSFS_SUS_SU
+	"CONFIG_KSU_SUSFS_SUS_SU",
+#endif
+#ifdef CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT
+	"CONFIG_KSU_SUSFS_HAS_MAGIC_MOUNT",
+#endif
+};
+
+static void susfs_v2_short_reply(void __user *arg, const char *value)
+{
+	struct susfs_v2_short_str reply = { .err = 0 };
+
+	strscpy(reply.str, value, sizeof(reply.str));
+	if (copy_to_user(arg, &reply, sizeof(reply)))
+		pr_info("susfs: v2 reply failed\n");
+}
+
+static void susfs_v2_features_reply(void __user *arg)
+{
+	char *buf = kzalloc(SUSFS_V2_FEATURES_SIZE, GFP_KERNEL);
+	size_t len = 0;
+	int i, err = 0;
+
+	if (!buf) {
+		err = -ENOMEM;
+		goto out;
+	}
+	for (i = 0; i < ARRAY_SIZE(susfs_v2_features); i++)
+		len += scnprintf(buf + len, SUSFS_V2_FEATURES_SIZE - len, "%s\n",
+				 susfs_v2_features[i]);
+	if (copy_to_user(arg, buf, SUSFS_V2_FEATURES_SIZE))
+		err = -EFAULT;
+	kfree(buf);
+out:
+	if (copy_to_user((char __user *)arg + SUSFS_V2_FEATURES_SIZE, &err, sizeof(err)))
+		pr_info("susfs: v2 reply failed\n");
+}
+
+void ksu_handle_susfs_v2_query(int magic2, unsigned int cmd, void __user *arg)
+{
+	if (magic2 != (int)SUSFS_V2_MAGIC || current_uid().val != 0 || !arg)
+		return;
+
+	switch (cmd) {
+	case CMD_SUSFS_SHOW_VERSION:
+		susfs_v2_short_reply(arg, SUSFS_VERSION);
+		break;
+	case CMD_SUSFS_SHOW_VARIANT:
+		susfs_v2_short_reply(arg, SUSFS_VARIANT);
+		break;
+	case CMD_SUSFS_SHOW_ENABLED_FEATURES:
+		susfs_v2_features_reply(arg);
+		break;
+	}
+}

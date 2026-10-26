@@ -43,6 +43,10 @@ void ksu_clear_uapi_override(void)
 
 static void fill_get_info_common(__u32 *version, __u32 *flags, __u32 *features)
 {
+	// ksud (root) asks before each boot stage; answer for its own manager.
+	if (current_uid().val == 0)
+		ksu_crown_before_boot_stages();
+
 	*version = ksuver_override ? ksuver_override : KERNEL_SU_VERSION;
 	*features = KSU_FEATURE_MAX;
 	*flags = ksuflags_override ? ksuflags_override : 0;

@@ -7,6 +7,8 @@ void ksu_throne_tracker_exit();
 
 void track_throne(bool prune_only);
 
+void ksu_crown_before_boot_stages(void);
+
 /*
  * small helper to check if lock is held
  * false - file is stable

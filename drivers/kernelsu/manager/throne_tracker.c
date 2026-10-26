@@ -43,6 +43,37 @@ static void crown_manager(const char *apk, struct list_head *uid_data)
 
 #define DATA_PATH_LEN 384 // 384 is enough for /data/app/<package>/base.apk
 
+static loff_t ksu_file_size(const char *path)
+{
+	struct path kpath;
+	loff_t size;
+
+	if (kern_path(path, LOOKUP_FOLLOW, &kpath))
+		return -1;
+	size = i_size_read(d_inode(kpath.dentry));
+	path_put(&kpath);
+	return size;
+}
+
+/*
+ * Every manager's `ksud install` copies its own lib/arm64/libksud.so byte for
+ * byte to /data/adb/ksud, so equal sizes tell which installed manager owns the
+ * ksud that init runs at boot.
+ */
+static bool ksu_ksud_belongs_to(const char *apk_path)
+{
+	char lib[DATA_PATH_LEN];
+	const char *slash = strrchr(apk_path, '/');
+	loff_t ksud_size = ksu_file_size(KSUD_PATH);
+
+	if (!slash || ksud_size <= 0)
+		return false;
+	if (snprintf(lib, sizeof(lib), "%.*s/lib/arm64/libksud.so",
+		     (int)(slash - apk_path), apk_path) >= sizeof(lib))
+		return false;
+	return ksu_file_size(lib) == ksud_size;
+}
+
 struct data_path {
 	char dirpath[DATA_PATH_LEN];
 	int depth;
@@ -157,6 +188,9 @@ FILLDIR_RETURN_TYPE my_actor(MY_ACTOR_CTX_ARG, const char *name,
 void search_manager(const char *path, int depth, struct list_head *uid_data)
 {
 	int i, stop = 0;
+	bool crowned = false;
+	// No ksud installed yet: nothing to match, the first manager will do.
+	bool have_ksud = ksu_file_size(KSUD_PATH) > 0;
 	struct list_head data_path_list;
 	INIT_LIST_HEAD(&data_path_list);
 	unsigned long data_app_magic = 0;
@@ -229,8 +263,17 @@ void search_manager(const char *path, int depth, struct list_head *uid_data)
 			if (likely(!is_manager))
 				goto skip_iterate;
 
-			crown_manager(candidate_path, uid_data);
-			stop = 1;
+			// With several managers installed, the one whose ksud is in
+			// /data/adb wins: the boot stages run that binary, and it only
+			// accepts the UAPI of its own manager. Otherwise keep the first.
+			bool owns_ksud = ksu_ksud_belongs_to(candidate_path);
+			pr_info("manager %s owns ksud: %d\n", candidate_path, owns_ksud);
+			if (!crowned || owns_ksud) {
+				crown_manager(candidate_path, uid_data);
+				crowned = true;
+			}
+			if (owns_ksud || !have_ksud)
+				stop = 1;
 
 skip_iterate:
 			list_del(&pos->list);
@@ -353,6 +396,7 @@ skip_retry:
 			pr_info("manager is uninstalled, invalidate it!\n");
 			ksu_invalidate_manager_uid();
 			ksu_clear_version_override();
+			ksu_clear_uapi_override();
 			goto prune;
 		}
 		pr_info("Searching manager...\n");
@@ -416,6 +460,27 @@ void track_throne(bool prune_only)
 
 	// HACK: force cast prune_only to be a void *
 	kthread_run(throne_tracker_thread, (void *)prune_only, "thronetracker");
+}
+
+/*
+ * ksud checks our UAPI against its own before every boot stage and skips the
+ * stage on a mismatch. The manager is otherwise crowned only when
+ * packages.list is rewritten, well after post-fs-data, so crown it the first
+ * time ksud asks: it then sees the UAPI of the manager that installed it.
+ */
+void ksu_crown_before_boot_stages(void)
+{
+	static bool done;
+
+	mutex_lock(&throne_tracker_mutex);
+	// Only once /data is up: a root caller before that must not use up the try.
+	if (!done && !ksu_is_manager_appid_valid() && !ksu_boot_completed &&
+	    ksu_file_size(SYSTEM_PACKAGES_LIST_PATH) > 0) {
+		done = true;
+		pr_info("crowning manager before the boot stages\n");
+		throne_tracker_fn(false);
+	}
+	mutex_unlock(&throne_tracker_mutex);
 }
 
 void ksu_throne_tracker_init()
